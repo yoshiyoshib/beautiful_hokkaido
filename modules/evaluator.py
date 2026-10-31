@@ -206,6 +206,17 @@ def classify_verdict(result: dict) -> str:
     return "REVIEW"
 
 
+CTA_ROTATION = [
+    "❤️ Double tap if you'd visit here!",
+    "❤️ Save this for your next Hokkaido trip!",
+    "❤️ Tap the heart if this made you smile 😊",
+    "✨ Follow @beautiful_hokkaido.jp for daily Hokkaido magic",
+    "❤️ Which season of Hokkaido do you love most?",
+    "📍 Tag someone you'd take here!",
+    "❤️ Which place in Hokkaido is on your bucket list?",
+]
+
+
 def build_final_caption(result: dict, author_handle: str, location: str = "", seed: str = "") -> str:
     from modules import hashtag_strategy  # 遅延 import で循環回避
 
@@ -214,6 +225,11 @@ def build_final_caption(result: dict, author_handle: str, location: str = "", se
     loc = (location or result.get("location_guess") or "").strip()
     content_type = (result.get("content_type") or "").strip()
     subject = (result.get("subject_detail") or "").strip()
+
+    # CTA 冒頭: seed（Unsplash photo id等）でローテ→同じ投稿なら一貫
+    import hashlib
+    idx = int(hashlib.md5((seed or loc).encode()).hexdigest(), 16) % len(CTA_ROTATION)
+    cta = CTA_ROTATION[idx]
 
     handle = (author_handle or "").lstrip("@").strip()
     credit = f"\n\n📷 Photo by @{handle}" if handle else ""
@@ -225,4 +241,4 @@ def build_final_caption(result: dict, author_handle: str, location: str = "", se
     tags_block = f"\n\n{tags}" if tags else ""
 
     body = en if not ja else f"{en}\n\n{ja}"
-    return f"{body}{credit}{tags_block}"
+    return f"{cta}\n\n{body}{credit}{tags_block}"

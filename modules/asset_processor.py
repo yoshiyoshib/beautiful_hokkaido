@@ -75,30 +75,82 @@ def _fit_image_4x5(src: Path) -> Path:
     return dst
 
 
+_FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",      # GH Actions ubuntu
+    "/System/Library/Fonts/Helvetica.ttc",                        # macOS
+    "C:/Windows/Fonts/arialbd.ttf",                               # Windows
+    "C:/Windows/Fonts/segoeuib.ttf",
+]
+
+
+def _find_font() -> str:
+    for p in _FONT_CANDIDATES:
+        if Path(p).exists():
+            return p
+    return ""
+
+
 def _image_to_reel_kenburns(src: Path) -> Path:
-    """静止画を Ken Burns 効果付きの 9:16 Reels (mp4) に変換。"""
+    """静止画を 9:16 Reels (mp4) に変換。軽量なズームイン＋CTA オーバーレイ付き。
+
+    - 8秒動画、30fps
+    - 背景に blur、前景に写真（4:5 → 9:16 に空間拡張）
+    - 最後 2 秒に "DOUBLE TAP IF YOU LOVE HOKKAIDO ❤" オーバーレイ
+    - 右矢印で視線をハートボタンへ誘導
+    """
+    print(f"  [kenburns] start convert {src.name}", flush=True)
     dst = config.TMP_DIR / f"reel_{src.stem}.mp4"
-    total_frames = REEL_DURATION_SEC * REEL_FPS
-    # ゆっくりズームイン（1.0 → 1.3 倍）＋中央寄せパン
+    font = _find_font()
+
+    # 軽量な ken burns 代替: scale+crop の時変数で実質ズーム効果
+    #   1 本の filter_complex で: blur背景 + ズーム前景 + 最後 CTA
+    cta = "DOUBLE TAP IF YOU LOVE HOKKAIDO"
+    brand = "@beautiful_hokkaido.jp"
+
+    text_filters = ""
+    if font:
+        # CTA (6s-8s): 下中央、矢印は右端のハートに向ける
+        text_filters = (
+            f",drawtext=fontfile='{font}':text='{cta}':fontsize=52:fontcolor=white:"
+            f"borderw=5:bordercolor=black@0.8:x=(w-text_w)/2:y=h-260:"
+            f"enable='between(t,6,8)'"
+            f",drawtext=fontfile='{font}':text='->':fontsize=72:fontcolor=white:"
+            f"borderw=5:bordercolor=black@0.8:x=w-150:y=(h-text_h)/2:"
+            f"enable='between(t,6,8)'"
+            # 常時表示: 下にハンドル
+            f",drawtext=fontfile='{font}':text='{brand}':fontsize=36:fontcolor=white:"
+            f"borderw=3:bordercolor=black@0.7:x=(w-text_w)/2:y=h-120"
+        )
+
     vf = (
-        f"scale=w=iw*2:h=ih*2:flags=lanczos,"
-        f"zoompan=z='min(zoom+0.0008,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-        f"d={total_frames}:s={REEL_W}x{REEL_H}:fps={REEL_FPS}"
+        # 背景: ぼかし拡大
+        f"[0:v]scale={REEL_W}:{REEL_H}:force_original_aspect_ratio=increase,"
+        f"crop={REEL_W}:{REEL_H},gblur=sigma=20[bg];"
+        # 前景: 画像をゆっくりズーム（scale の時変数で代替、zoompan 回避）
+        f"[0:v]scale='min({REEL_W},iw*(1+t*0.03))':'-1':eval=frame[fg];"
+        # 合成
+        f"[bg][fg]overlay=(W-w)/2:(H-h)/2,fps={REEL_FPS}{text_filters}"
     )
+
     cmd = [
-        "ffmpeg", "-y", "-loop", "1", "-t", str(REEL_DURATION_SEC), "-i", str(src),
-        "-vf", vf,
-        "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+        "ffmpeg", "-y",
+        "-loop", "1", "-t", str(REEL_DURATION_SEC), "-i", str(src),
+        "-filter_complex", vf,
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
         "-pix_fmt", "yuv420p",
         "-r", str(REEL_FPS),
         "-movflags", "+faststart",
-        "-an",  # 無音（音楽は IG 側で後付け可）
+        "-an",
         str(dst),
     ]
+    print(f"  [kenburns] running ffmpeg...", flush=True)
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("ffmpeg kenburns timed out (>120s)")
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg kenburns failed: {e.stderr.decode(errors='replace')[-500:]}") from e
+    print(f"  [kenburns] OK -> {dst.name}", flush=True)
     return dst
 
 
