@@ -29,6 +29,8 @@ HTTP_HEADERS = {
 
 FEED_W, FEED_H = 1080, 1350  # 4:5
 REEL_W, REEL_H = 1080, 1920  # 9:16
+REEL_DURATION_SEC = 8  # Reels 長さ（3〜90s）
+REEL_FPS = 30
 
 
 def _download(url: str) -> Path:
@@ -70,6 +72,33 @@ def _fit_image_4x5(src: Path) -> Path:
 
     dst = config.TMP_DIR / f"feed_{src.stem}.jpg"
     canvas.save(dst, "JPEG", quality=92, optimize=True)
+    return dst
+
+
+def _image_to_reel_kenburns(src: Path) -> Path:
+    """静止画を Ken Burns 効果付きの 9:16 Reels (mp4) に変換。"""
+    dst = config.TMP_DIR / f"reel_{src.stem}.mp4"
+    total_frames = REEL_DURATION_SEC * REEL_FPS
+    # ゆっくりズームイン（1.0 → 1.3 倍）＋中央寄せパン
+    vf = (
+        f"scale=w=iw*2:h=ih*2:flags=lanczos,"
+        f"zoompan=z='min(zoom+0.0008,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+        f"d={total_frames}:s={REEL_W}x{REEL_H}:fps={REEL_FPS}"
+    )
+    cmd = [
+        "ffmpeg", "-y", "-loop", "1", "-t", str(REEL_DURATION_SEC), "-i", str(src),
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+        "-pix_fmt", "yuv420p",
+        "-r", str(REEL_FPS),
+        "-movflags", "+faststart",
+        "-an",  # 無音（音楽は IG 側で後付け可）
+        str(dst),
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg kenburns failed: {e.stderr.decode(errors='replace')[-500:]}") from e
     return dst
 
 
@@ -123,14 +152,19 @@ def _upload(path: Path, resource_type: str) -> str:
     return res["secure_url"]
 
 
-def process_and_host(url: str) -> tuple[str, str]:
+def process_and_host(url: str, as_reel: bool = False) -> tuple[str, str]:
     """ソース URL を整形→Cloudinary 保存し (media_type, public_url) を返す。
 
-    media_type は Instagram Graph API 向けに 'IMAGE' か 'VIDEO'。
+    - 動画入力: 常に 9:16 Reels として扱う
+    - 静止画入力 + as_reel=False: 4:5 フィード画像
+    - 静止画入力 + as_reel=True: Ken Burns 効果で 9:16 Reels 動画化
     """
     local = _download(url)
     if _is_video(local):
         normalized = _fit_video_9x16(local)
+        return "VIDEO", _upload(normalized, "video")
+    if as_reel:
+        normalized = _image_to_reel_kenburns(local)
         return "VIDEO", _upload(normalized, "video")
     normalized = _fit_image_4x5(local)
     return "IMAGE", _upload(normalized, "image")

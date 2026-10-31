@@ -37,14 +37,23 @@ Evaluate the attached image strictly. Return ONLY valid JSON - no markdown fence
 
 JSON schema (all keys required):
 {
-  "relevance_score": <int 0-10 - how well it fits Hokkaido scenery and four seasons: snow landscapes, lavender fields, autumn foliage, drift ice, pristine nature, famous spots>,
+  "relevance_score": <int 0-10 - how well it fits Hokkaido>,
   "aesthetic_score": <int 0-10 - composition, exposure, color, pro-level quality>,
   "quality_pass": <true | false - false if selfie, flyer, text-heavy ad, blurry, low resolution, broken image, large watermark covering subject>,
+  "content_type": "<one of: 'landscape', 'wildlife', 'cityscape', 'food', 'other'>",
   "location_guess": "<e.g. 'Biei, Hokkaido', 'Otaru Canal', 'Shiretoko Peninsula'; use 'Unknown, Hokkaido' when uncertain>",
+  "subject_detail": "<if content_type='wildlife', name the species in English + Japanese e.g. 'Red-crowned Crane (タンチョウ)'; empty otherwise>",
   "caption_en": "<engaging English caption, 2-4 sentences, evocative travel-magazine tone, NO hashtags, NO author credit>",
   "caption_ja": "<attractive Japanese caption 2-3 sentences, no hashtags, no credit>",
+  "alt_text": "<concise accessibility description, 1-2 sentences, factual, under 100 words>",
   "verdict": "<AUTO_APPROVE | REVIEW | REJECT>"
 }
+
+What counts as HIGH relevance (>=8) for Hokkaido:
+- Landscapes: snow fields, lavender, autumn foliage, drift ice, mountains, blue pond, hills, coasts, famous spots
+- Hokkaido-native wildlife: Red-crowned Crane (タンチョウ), Blakiston's Fish Owl (シマフクロウ), Ezo Red Fox (キタキツネ), Ezo Sika Deer (エゾシカ), Brown Bear (ヒグマ), Hokkaido Squirrel (エゾリス), White-tailed/Steller's Eagle, Hokkaido Pika (エゾナキウサギ), sea otter, seals around Hokkaido
+- Iconic cityscapes: Sapporo clock tower, Otaru canal lamps, Hakodate night view
+- Cultural/seasonal: Sapporo Snow Festival, Soranuma falls
 
 Verdict rules:
 - "AUTO_APPROVE" ONLY if aesthetic_score>=8 AND relevance_score>=8 AND quality_pass is true.
@@ -197,11 +206,23 @@ def classify_verdict(result: dict) -> str:
     return "REVIEW"
 
 
-def build_final_caption(result: dict, author_handle: str) -> str:
+def build_final_caption(result: dict, author_handle: str, location: str = "", seed: str = "") -> str:
+    from modules import hashtag_strategy  # 遅延 import で循環回避
+
     en = (result.get("caption_en") or "").strip()
     ja = (result.get("caption_ja") or "").strip()
+    loc = (location or result.get("location_guess") or "").strip()
+    content_type = (result.get("content_type") or "").strip()
+    subject = (result.get("subject_detail") or "").strip()
+
     handle = (author_handle or "").lstrip("@").strip()
     credit = f"\n\n📷 Photo by @{handle}" if handle else ""
-    tags = f"\n\n{config.DEFAULT_HASHTAGS}" if config.DEFAULT_HASHTAGS else ""
+
+    tags = hashtag_strategy.build_hashtags(
+        location=loc, content_type=content_type, subject_detail=subject,
+        unique_seed=seed,
+    )
+    tags_block = f"\n\n{tags}" if tags else ""
+
     body = en if not ja else f"{en}\n\n{ja}"
-    return f"{body}{credit}{tags}"
+    return f"{body}{credit}{tags_block}"

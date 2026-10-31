@@ -17,6 +17,7 @@ from modules import (
     asset_processor,
     evaluator,
     ig_publisher,
+    insights_collector,
     sheet_manager,
     token_monitor,
     unsplash_source,
@@ -75,7 +76,9 @@ def run_auto_source() -> int:
         if verdict != "AUTO_APPROVE":
             continue
 
-        caption = evaluator.build_final_caption(result, p["author_handle"])
+        caption = evaluator.build_final_caption(
+            result, p["author_handle"], location=location, seed=p["id"]
+        )
         caption += unsplash_source.build_credit_tail(p)
 
         row_id = f"unsplash_{p['id']}"
@@ -131,7 +134,7 @@ def run_evaluate() -> int:
     return 0
 
 
-def run_publish() -> int:
+def run_publish(as_reel: bool = False) -> int:
     row_idx, row = sheet_manager.fetch_due_approved()
     if row_idx is None:
         print("No due Approved row.")
@@ -139,13 +142,29 @@ def run_publish() -> int:
 
     url = (row.get("Original_URL") or "").strip()
     caption = (row.get("Generated_Caption") or "").strip()
-    print(f"[publish] row={row_idx} url={url}")
+    location = (row.get("Location") or "").strip()
+    # alt_text はキャプションの英語部分の先頭2文を切り出し
+    alt_text = ""
+    if caption:
+        head = caption.split("\n\n")[0]
+        alt_text = head[:400]
+
+    print(f"[publish] row={row_idx} url={url} as_reel={as_reel}")
     try:
-        media_type, public_url = asset_processor.process_and_host(url)
+        media_type, public_url = asset_processor.process_and_host(url, as_reel=as_reel)
         sheet_manager.set_public_media(row_idx, public_url)
         print(f"  hosted -> {public_url} ({media_type})")
 
-        ig_post_id = ig_publisher.post_media(media_type, public_url, caption)
+        location_id = ig_publisher.search_location_id(location) if location else None
+        if location_id:
+            print(f"  location_id={location_id}")
+
+        ig_post_id = ig_publisher.post_media(
+            media_type, public_url, caption,
+            alt_text=alt_text,
+            location_id=location_id or "",
+            share_story=True,
+        )
         sheet_manager.mark_posted(row_idx, ig_post_id)
         print(f"  posted -> IG id={ig_post_id}")
         return 0
@@ -160,7 +179,10 @@ def main() -> int:
     parser.add_argument(
         "--mode",
         required=True,
-        choices=["auto_source", "evaluate", "publish", "init_sheet", "check_token"],
+        choices=[
+            "auto_source", "evaluate", "publish", "publish_reel",
+            "init_sheet", "check_token", "collect_insights",
+        ],
     )
     args = parser.parse_args()
 
@@ -172,6 +194,10 @@ def main() -> int:
         return run_evaluate()
     if args.mode == "check_token":
         return token_monitor.monitor()
+    if args.mode == "collect_insights":
+        return insights_collector.collect()
+    if args.mode == "publish_reel":
+        return run_publish(as_reel=True)
     return run_publish()
 
 
