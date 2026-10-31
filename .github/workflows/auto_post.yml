@@ -1,0 +1,81 @@
+name: auto_post
+
+on:
+  schedule:
+    # JST 07:30 = UTC 22:30（前日） → 朝の候補補充
+    - cron: "30 22 * * *"
+    # JST 08:00 = UTC 23:00（前日） → 朝投稿
+    - cron: "0 23 * * *"
+    # JST 18:00 = UTC 09:00 → 夜投稿
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "mode: auto_source / evaluate / publish"
+        required: true
+        default: "publish"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Write Google service account JSON
+        run: |
+          printf '%s' "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" > service_account.json
+          test -s service_account.json
+
+      - name: Determine mode from cron
+        id: mode
+        run: |
+          if [ -n "${{ github.event.inputs.mode }}" ]; then
+            MODE="${{ github.event.inputs.mode }}"
+          elif [ "${{ github.event.schedule }}" = "30 22 * * *" ]; then
+            MODE="auto_source"
+          else
+            MODE="publish"
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "selected mode: $MODE"
+
+      - name: Run orchestrator
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ./service_account.json
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          WORKSHEET_NAME: ${{ secrets.WORKSHEET_NAME }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          DEFAULT_HASHTAGS: ${{ secrets.DEFAULT_HASHTAGS }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          UNSPLASH_QUERIES: ${{ secrets.UNSPLASH_QUERIES }}
+          UNSPLASH_PER_QUERY: ${{ secrets.UNSPLASH_PER_QUERY }}
+          AUTO_SOURCE_MAX_APPROVE: ${{ secrets.AUTO_SOURCE_MAX_APPROVE }}
+          TIMEZONE: Asia/Tokyo
+        run: python main.py --mode ${{ steps.mode.outputs.mode }}
+
+      - name: Cleanup secrets
+        if: always()
+        run: rm -f service_account.json
