@@ -43,12 +43,17 @@ DEFAULT_HASHTAGS = os.getenv(
 )
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Tokyo")
 
+def _env_int(name: str, default: int) -> int:
+    v = os.getenv(name)
+    return int(v) if v and v.strip() else default
+
+
 # --- Scoring thresholds (AUTO_APPROVE) ---
-MIN_AESTHETIC_SCORE = int(os.getenv("MIN_AESTHETIC_SCORE", "8"))
-MIN_RELEVANCE_SCORE = int(os.getenv("MIN_RELEVANCE_SCORE", "8"))
+MIN_AESTHETIC_SCORE = _env_int("MIN_AESTHETIC_SCORE", 8)
+MIN_RELEVANCE_SCORE = _env_int("MIN_RELEVANCE_SCORE", 8)
 
 # --- Container polling ---
-CONTAINER_MAX_WAIT_SEC = int(os.getenv("CONTAINER_MAX_WAIT_SEC", "180"))
+CONTAINER_MAX_WAIT_SEC = _env_int("CONTAINER_MAX_WAIT_SEC", 180)
 
 # --- Unsplash (auto source) ---
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "")
@@ -60,7 +65,7 @@ UNSPLASH_QUERIES = [
     ).split(",")
     if q.strip()
 ]
-UNSPLASH_PER_QUERY = int(os.getenv("UNSPLASH_PER_QUERY", "2"))
-UNSPLASH_ORDER_BY = os.getenv("UNSPLASH_ORDER_BY", "relevant")  # "latest" | "relevant"
-AUTO_SOURCE_MAX_APPROVE = int(os.getenv("AUTO_SOURCE_MAX_APPROVE", "3"))
-AUTO_SOURCE_MAX_EVAL = int(os.getenv("AUTO_SOURCE_MAX_EVAL", "15"))  # 1日の総採点数ハードリミット
+UNSPLASH_PER_QUERY = _env_int("UNSPLASH_PER_QUERY", 2)
+UNSPLASH_ORDER_BY = os.getenv("UNSPLASH_ORDER_BY") or "relevant"  # "latest" | "relevant"
+AUTO_SOURCE_MAX_APPROVE = _env_int("AUTO_SOURCE_MAX_APPROVE", 3)
+AUTO_SOURCE_MAX_EVAL = _env_int("AUTO_SOURCE_MAX_EVAL", 15)  # 1日の総採点数ハードリミット
