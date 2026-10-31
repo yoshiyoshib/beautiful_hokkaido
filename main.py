@@ -159,11 +159,12 @@ def run_publish(as_reel: bool = False) -> int:
         if location_id:
             print(f"  location_id={location_id}")
 
+        # Story share は IMAGE のみ（Reels/VIDEO は video_url 必須で複雑なのでスキップ）
         ig_post_id = ig_publisher.post_media(
             media_type, public_url, caption,
             alt_text=alt_text,
             location_id=location_id or "",
-            share_story=True,
+            share_story=(media_type == "IMAGE"),
         )
         sheet_manager.mark_posted(row_idx, ig_post_id)
         print(f"  posted -> IG id={ig_post_id}")
