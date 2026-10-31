@@ -13,7 +13,7 @@ from modules.sheet_manager import _client
 INSIGHTS_SHEET = "insights"
 INSIGHTS_COLUMNS = [
     "IG_Post_ID", "Posted_At", "Posted_Hour_JST", "Media_Type",
-    "Reach", "Impressions", "Likes", "Comments", "Saves", "Shares",
+    "Reach", "Plays", "Likes", "Comments", "Saves", "Shares", "Total_Interactions",
     "Fetched_At",
 ]
 
@@ -33,22 +33,43 @@ def _ensure_insights_sheet() -> gspread.Worksheet:
 
 
 def fetch_post_insights(media_id: str) -> dict:
-    """IG API から1投稿のインサイトを取得。"""
-    r = requests.get(
-        f"{config.IG_API_BASE}/{media_id}/insights",
-        params={
-            "metric": "reach,impressions,likes,comments,saves,shares",
-            "access_token": config.META_ACCESS_TOKEN,
-        },
-        timeout=20,
-    )
-    r.raise_for_status()
+    """IG API から1投稿のインサイトを取得。メトリクスが拒否されたら個別に試行。"""
+    # 全メディア共通で安全なメトリクス（v21 で deprecate されたもの除く）
+    safe_metrics = ["reach", "likes", "comments", "saves"]
+    reel_only = ["plays", "shares", "total_interactions"]
+
     out: dict = {}
-    for item in r.json().get("data", []):
-        name = item.get("name")
-        values = item.get("values") or []
-        if values:
-            out[name] = values[0].get("value", 0)
+    # 1) バッチで安全セット
+    try:
+        r = requests.get(
+            f"{config.IG_API_BASE}/{media_id}/insights",
+            params={"metric": ",".join(safe_metrics), "access_token": config.META_ACCESS_TOKEN},
+            timeout=20,
+        )
+        if r.ok:
+            for item in r.json().get("data", []):
+                name = item.get("name")
+                values = item.get("values") or []
+                if values:
+                    out[name] = values[0].get("value", 0)
+    except Exception:
+        pass
+
+    # 2) Reels 専用メトリクスを個別に試行（失敗は無視）
+    for m in reel_only:
+        try:
+            r = requests.get(
+                f"{config.IG_API_BASE}/{media_id}/insights",
+                params={"metric": m, "access_token": config.META_ACCESS_TOKEN},
+                timeout=15,
+            )
+            if r.ok:
+                for item in r.json().get("data", []):
+                    values = item.get("values") or []
+                    if values:
+                        out[m] = values[0].get("value", 0)
+        except Exception:
+            pass
     return out
 
 
@@ -100,9 +121,10 @@ def collect() -> int:
 
         row = [
             pid, posted_at_jst, posted_hour, media_type,
-            insights.get("reach", 0), insights.get("impressions", 0),
+            insights.get("reach", 0), insights.get("plays", 0),
             insights.get("likes", 0), insights.get("comments", 0),
             insights.get("saves", 0), insights.get("shares", 0),
+            insights.get("total_interactions", 0),
             now_iso,
         ]
         if pid in existing_ids:
