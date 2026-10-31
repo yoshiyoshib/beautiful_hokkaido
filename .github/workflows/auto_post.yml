@@ -6,14 +6,20 @@ on:
     - cron: "30 22 * * *"
     # JST 08:00 = UTC 23:00（前日） → 朝投稿
     - cron: "0 23 * * *"
+    # JST 09:00 = UTC 00:00 → Meta トークン残日数チェック
+    - cron: "0 0 * * *"
     # JST 18:00 = UTC 09:00 → 夜投稿
     - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       mode:
-        description: "mode: auto_source / evaluate / publish"
+        description: "mode: auto_source / evaluate / publish / check_token"
         required: true
         default: "publish"
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   run:
@@ -52,6 +58,8 @@ jobs:
             MODE="${{ github.event.inputs.mode }}"
           elif [ "${{ github.event.schedule }}" = "30 22 * * *" ]; then
             MODE="auto_source"
+          elif [ "${{ github.event.schedule }}" = "0 0 * * *" ]; then
+            MODE="check_token"
           else
             MODE="publish"
           fi
@@ -72,6 +80,8 @@ jobs:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           DEFAULT_HASHTAGS: ${{ secrets.DEFAULT_HASHTAGS }}
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           UNSPLASH_QUERIES: ${{ secrets.UNSPLASH_QUERIES }}
           UNSPLASH_PER_QUERY: ${{ secrets.UNSPLASH_PER_QUERY }}
           AUTO_SOURCE_MAX_APPROVE: ${{ secrets.AUTO_SOURCE_MAX_APPROVE }}

@@ -13,7 +13,14 @@ import sys
 import traceback
 
 import config
-from modules import asset_processor, evaluator, ig_publisher, sheet_manager, unsplash_source
+from modules import (
+    asset_processor,
+    evaluator,
+    ig_publisher,
+    sheet_manager,
+    token_monitor,
+    unsplash_source,
+)
 
 
 def run_init_sheet() -> int:
@@ -153,7 +160,7 @@ def main() -> int:
     parser.add_argument(
         "--mode",
         required=True,
-        choices=["auto_source", "evaluate", "publish", "init_sheet"],
+        choices=["auto_source", "evaluate", "publish", "init_sheet", "check_token"],
     )
     args = parser.parse_args()
 
@@ -163,6 +170,8 @@ def main() -> int:
         return run_auto_source()
     if args.mode == "evaluate":
         return run_evaluate()
+    if args.mode == "check_token":
+        return token_monitor.monitor()
     return run_publish()
 
 
