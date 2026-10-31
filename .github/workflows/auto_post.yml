@@ -4,7 +4,7 @@ on:
   schedule:
     # JST 07:30 = UTC 22:30（前日） → 朝の候補補充
     - cron: "30 22 * * *"
-    # JST 08:00 = UTC 23:00（前日） → 朝投稿（フィード画像）
+    # JST 08:00 = UTC 23:00（前日） → 朝投稿（Reels）
     - cron: "0 23 * * *"
     # JST 09:00 = UTC 00:00 → Meta トークン残日数チェック
     - cron: "0 0 * * *"
@@ -12,6 +12,7 @@ on:
     - cron: "0 3 * * *"
     # JST 18:00 = UTC 09:00 → 夜投稿（Reels）
     - cron: "0 9 * * *"
+    # NOTE: 両方の publish_reel が Reels 投稿 (1日2本)
   workflow_dispatch:
     inputs:
       mode:
@@ -65,6 +66,8 @@ jobs:
           elif [ "${{ github.event.schedule }}" = "0 3 * * *" ]; then
             MODE="collect_insights"
           elif [ "${{ github.event.schedule }}" = "0 9 * * *" ]; then
+            MODE="publish_reel"
+          elif [ "${{ github.event.schedule }}" = "0 23 * * *" ]; then
             MODE="publish_reel"
           else
             MODE="publish"
