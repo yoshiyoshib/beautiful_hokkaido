@@ -8,6 +8,8 @@ on:
     - cron: "0 23 * * *"
     # JST 09:00 = UTC 00:00 → Meta トークン残日数チェック
     - cron: "0 0 * * *"
+    # JST 10:00 = UTC 01:00 → Approved キュー健全性チェック
+    - cron: "0 1 * * *"
     # JST 12:00 = UTC 03:00 → インサイト収集（engagement取得）
     - cron: "0 3 * * *"
     # JST 18:00 = UTC 09:00 → 夜投稿（画像）
@@ -15,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "mode: auto_source / evaluate / publish / publish_reel / check_token / collect_insights"
+        description: "mode: auto_source / evaluate / publish / publish_reel / check_token / check_queue / collect_insights"
         required: true
         default: "publish"
 
@@ -62,6 +64,8 @@ jobs:
             MODE="auto_source"
           elif [ "${{ github.event.schedule }}" = "0 0 * * *" ]; then
             MODE="check_token"
+          elif [ "${{ github.event.schedule }}" = "0 1 * * *" ]; then
+            MODE="check_queue"
           elif [ "${{ github.event.schedule }}" = "0 3 * * *" ]; then
             MODE="collect_insights"
           else

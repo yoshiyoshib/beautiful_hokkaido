@@ -66,6 +66,13 @@ UNSPLASH_QUERIES = [
     if q.strip()
 ]
 UNSPLASH_PER_QUERY = _env_int("UNSPLASH_PER_QUERY", 2)
-UNSPLASH_ORDER_BY = os.getenv("UNSPLASH_ORDER_BY") or "relevant"  # "latest" | "relevant"
+UNSPLASH_ORDER_BY = os.getenv("UNSPLASH_ORDER_BY") or "latest"  # "latest" | "relevant"
 AUTO_SOURCE_MAX_APPROVE = _env_int("AUTO_SOURCE_MAX_APPROVE", 3)
 AUTO_SOURCE_MAX_EVAL = _env_int("AUTO_SOURCE_MAX_EVAL", 15)  # 1日の総採点数ハードリミット
+
+# auto_source が 0 件で終わった時の緩和リトライ閾値
+AUTO_SOURCE_FALLBACK_MIN_AESTHETIC = _env_int("AUTO_SOURCE_FALLBACK_MIN_AESTHETIC", 7)
+AUTO_SOURCE_FALLBACK_MIN_RELEVANCE = _env_int("AUTO_SOURCE_FALLBACK_MIN_RELEVANCE", 7)
+
+# Approved キューが空＋最終投稿からこの時間経過で GitHub Issue 作成
+QUEUE_ALERT_HOURS = _env_int("QUEUE_ALERT_HOURS", 24)

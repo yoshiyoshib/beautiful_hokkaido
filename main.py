@@ -18,6 +18,7 @@ from modules import (
     evaluator,
     ig_publisher,
     insights_collector,
+    queue_monitor,
     sheet_manager,
     token_monitor,
     unsplash_source,
@@ -46,6 +47,9 @@ def run_auto_source() -> int:
     consecutive_failures = 0
     MAX_CONSECUTIVE_FAILURES = 3
 
+    # 緩和リトライで使うため、REVIEW 判定の素材＋結果を保持
+    review_bucket: list[tuple[dict, dict]] = []
+
     for p in candidates:
         if approved_count >= config.AUTO_SOURCE_MAX_APPROVE:
             print(f"  reached AUTO_SOURCE_MAX_APPROVE={config.AUTO_SOURCE_MAX_APPROVE}, stopping")
@@ -73,28 +77,54 @@ def run_auto_source() -> int:
             f"  verdict={verdict} aesthetic={result.get('aesthetic_score')} "
             f"relevance={result.get('relevance_score')} loc={location!r}"
         )
+        if verdict == "REVIEW":
+            review_bucket.append((p, result))
+            continue
         if verdict != "AUTO_APPROVE":
             continue
 
-        caption = evaluator.build_final_caption(
-            result, p["author_handle"], location=location, seed=p["id"]
-        )
-        caption += unsplash_source.build_credit_tail(p)
-
-        row_id = f"unsplash_{p['id']}"
-        new_row = sheet_manager.append_row(
-            id=row_id,
-            url=p["url"],
-            author=p["author_handle"],
-            status="Approved",
-            location=location,
-            caption=caption,
-        )
+        _append_approved_from_result(p, result, location)
         approved_count += 1
-        print(f"  -> added row {new_row} as Approved")
+
+    # 層2: 通常閾値で 0 件なら緩和モードで救済（既に評価済みの REVIEW から拾う）
+    if approved_count == 0 and review_bucket:
+        print(f"[auto_source] 0 approved, trying relaxed verdict on {len(review_bucket)} REVIEW items")
+        for p, result in review_bucket:
+            if approved_count >= config.AUTO_SOURCE_MAX_APPROVE:
+                break
+            verdict = evaluator.classify_verdict(result, relaxed=True)
+            if verdict != "AUTO_APPROVE":
+                continue
+            location = (result.get("location_guess") or "").strip()
+            _append_approved_from_result(p, result, location)
+            approved_count += 1
+            print(f"  [relaxed] rescued {p['id']} ({result.get('aesthetic_score')}/{result.get('relevance_score')})")
 
     print(f"[auto_source] done. new_approved={approved_count}")
+
+    # 層3: それでも 0 件ならキュー監視に通知（Issue 作成は冪等）
+    if approved_count == 0:
+        queue_monitor.monitor(trigger="auto_source_zero")
+
     return 0
+
+
+def _append_approved_from_result(p: dict, result: dict, location: str) -> None:
+    """auto_source 内の Approved 追加処理（通常・緩和リトライ共通）。"""
+    caption = evaluator.build_final_caption(
+        result, p["author_handle"], location=location, seed=p["id"]
+    )
+    caption += unsplash_source.build_credit_tail(p)
+    row_id = f"unsplash_{p['id']}"
+    new_row = sheet_manager.append_row(
+        id=row_id,
+        url=p["url"],
+        author=p["author_handle"],
+        status="Approved",
+        location=location,
+        caption=caption,
+    )
+    print(f"  -> added row {new_row} as Approved")
 
 
 def run_evaluate() -> int:
@@ -138,6 +168,7 @@ def run_publish(as_reel: bool = False) -> int:
     row_idx, row = sheet_manager.fetch_due_approved()
     if row_idx is None:
         print("No due Approved row.")
+        queue_monitor.monitor(trigger="publish_empty")
         return 0
 
     url = (row.get("Original_URL") or "").strip()
@@ -182,7 +213,7 @@ def main() -> int:
         required=True,
         choices=[
             "auto_source", "evaluate", "publish", "publish_reel",
-            "init_sheet", "check_token", "collect_insights",
+            "init_sheet", "check_token", "check_queue", "collect_insights",
         ],
     )
     args = parser.parse_args()
@@ -195,6 +226,8 @@ def main() -> int:
         return run_evaluate()
     if args.mode == "check_token":
         return token_monitor.monitor()
+    if args.mode == "check_queue":
+        return queue_monitor.monitor(trigger="scheduled")
     if args.mode == "collect_insights":
         return insights_collector.collect()
     if args.mode == "publish_reel":

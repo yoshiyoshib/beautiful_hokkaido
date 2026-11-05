@@ -5,6 +5,9 @@ Photo by @{username} on Unsplash を自動付与して誠実運用する。
 """
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import requests
 
 import config
@@ -21,13 +24,14 @@ def _headers() -> dict:
     }
 
 
-def search_photos(query: str, per_page: int = 10, order_by: str = "latest") -> list[dict]:
+def search_photos(query: str, per_page: int = 10, order_by: str = "latest", page: int = 1) -> list[dict]:
     """1クエリで Unsplash を叩いて、整形済みの候補リストを返す。"""
     r = requests.get(
         f"{API_BASE}/search/photos",
         params={
             "query": query,
             "per_page": per_page,
+            "page": page,
             "order_by": order_by,  # "latest" | "relevant"
             "orientation": "portrait",  # Instagram 4:5 向き優先
             "content_filter": "high",
@@ -53,8 +57,20 @@ def search_photos(query: str, per_page: int = 10, order_by: str = "latest") -> l
     return out
 
 
-def discover(queries: list[str], per_query: int = 5, order_by: str = "latest") -> list[dict]:
-    """複数クエリをまとめて叩き、ID で重複排除した候補リストを返す。"""
+def _page_for_today() -> int:
+    """日次でページ1〜3をローテ（同じクエリでも日ごとに違う素材を引く）。"""
+    day = datetime.now(ZoneInfo(config.TIMEZONE)).day
+    return (day % 3) + 1
+
+
+def discover(queries: list[str], per_query: int = 5, order_by: str = "latest",
+             page: int | None = None) -> list[dict]:
+    """複数クエリをまとめて叩き、ID で重複排除した候補リストを返す。
+
+    page=None なら日次ローテで 1〜3 を自動選択。
+    """
+    if page is None:
+        page = _page_for_today()
     seen: set[str] = set()
     photos: list[dict] = []
     for q in queries:
@@ -62,13 +78,14 @@ def discover(queries: list[str], per_query: int = 5, order_by: str = "latest") -
         if not q:
             continue
         try:
-            for p in search_photos(q, per_page=per_query, order_by=order_by):
+            for p in search_photos(q, per_page=per_query, order_by=order_by, page=page):
                 if p["id"] in seen:
                     continue
                 seen.add(p["id"])
                 photos.append(p)
         except requests.HTTPError as e:
-            print(f"  [unsplash] query={q!r} failed: {e}")
+            print(f"  [unsplash] query={q!r} page={page} failed: {e}")
+    print(f"  [unsplash] page={page} queries={len(queries)} results={len(photos)}")
     return photos
 
 

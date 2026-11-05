@@ -190,8 +190,12 @@ def evaluate(image_src: str) -> dict:
     raise RuntimeError(f"All vision providers failed. Last error: {last_error}")
 
 
-def classify_verdict(result: dict) -> str:
-    """閾値を自前チェックして verdict を上書き（LLMの暴走を抑える安全装置）。"""
+def classify_verdict(result: dict, relaxed: bool = False) -> str:
+    """閾値を自前チェックして verdict を上書き（LLMの暴走を抑える安全装置）。
+
+    relaxed=True のとき、AUTO_SOURCE_FALLBACK_* の緩和閾値を使う。
+    auto_source が通常閾値で 0 件になった時の救済用。
+    """
     try:
         aesthetic = int(result.get("aesthetic_score", 0))
         relevance = int(result.get("relevance_score", 0))
@@ -201,7 +205,9 @@ def classify_verdict(result: dict) -> str:
         return "REJECT"
     if aesthetic < 5 or relevance < 5:
         return "REJECT"
-    if aesthetic >= config.MIN_AESTHETIC_SCORE and relevance >= config.MIN_RELEVANCE_SCORE:
+    min_a = config.AUTO_SOURCE_FALLBACK_MIN_AESTHETIC if relaxed else config.MIN_AESTHETIC_SCORE
+    min_r = config.AUTO_SOURCE_FALLBACK_MIN_RELEVANCE if relaxed else config.MIN_RELEVANCE_SCORE
+    if aesthetic >= min_a and relevance >= min_r:
         return "AUTO_APPROVE"
     return "REVIEW"
 
