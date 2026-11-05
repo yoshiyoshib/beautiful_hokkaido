@@ -57,12 +57,10 @@ CONTAINER_MAX_WAIT_SEC = _env_int("CONTAINER_MAX_WAIT_SEC", 180)
 
 # --- Unsplash (auto source) ---
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "")
+_UNSPLASH_QUERIES_DEFAULT = "hokkaido,biei,otaru,shiretoko,sapporo,furano,hakodate,niseko,北海道,美瑛,小樽"
 UNSPLASH_QUERIES = [
     q.strip()
-    for q in os.getenv(
-        "UNSPLASH_QUERIES",
-        "hokkaido,biei,otaru,shiretoko,sapporo,furano,hakodate,niseko,北海道,美瑛,小樽",
-    ).split(",")
+    for q in (os.getenv("UNSPLASH_QUERIES") or _UNSPLASH_QUERIES_DEFAULT).split(",")
     if q.strip()
 ]
 UNSPLASH_PER_QUERY = _env_int("UNSPLASH_PER_QUERY", 2)
