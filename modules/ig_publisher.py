@@ -12,6 +12,46 @@ def _url(path: str) -> str:
     return f"{config.IG_API_BASE}/{path.lstrip('/')}"
 
 
+TRANSIENT_RETRY_DELAYS = [5, 15, 30]  # 合計 50秒、最大 4 回試行
+
+
+def _is_transient_error(response: requests.Response) -> bool:
+    """Meta API の一過性エラー判定。
+
+    - HTTP 5xx: サーバ側一時障害
+    - body.error.is_transient=true: Meta 自身が明示
+    - code 2 (unexpected error): 典型的な過負荷リトライ対象
+    """
+    if 500 <= response.status_code < 600:
+        return True
+    try:
+        err = response.json().get("error") or {}
+        if err.get("is_transient") is True:
+            return True
+        if err.get("code") in (1, 2):  # API Unknown / Service Temporarily Unavailable
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
+def _post_with_retry(endpoint: str, data: dict, timeout: int = 60) -> requests.Response:
+    """POST with transient-error retry. 最終失敗時は最後のレスポンスをそのまま返す。"""
+    last_response: requests.Response | None = None
+    for attempt in range(len(TRANSIENT_RETRY_DELAYS) + 1):
+        r = requests.post(endpoint, data=data, timeout=timeout)
+        if r.ok:
+            return r
+        last_response = r
+        if not _is_transient_error(r):
+            return r  # 永続エラー → リトライしない
+        if attempt < len(TRANSIENT_RETRY_DELAYS):
+            delay = TRANSIENT_RETRY_DELAYS[attempt]
+            print(f"  [retry] transient {r.status_code}, waiting {delay}s (attempt {attempt+1}/{len(TRANSIENT_RETRY_DELAYS)})")
+            time.sleep(delay)
+    return last_response  # type: ignore[return-value]
+
+
 def create_container(
     media_type: str,
     public_url: str,
@@ -37,7 +77,7 @@ def create_container(
     if location_id:
         data["location_id"] = location_id
 
-    r = requests.post(endpoint, data=data, timeout=60)
+    r = _post_with_retry(endpoint, data)
     if not r.ok:
         raise RuntimeError(f"create_container failed: {r.status_code} {r.text}")
     body = r.json()
@@ -159,13 +199,13 @@ def wait_for_ready(container_id: str, max_wait_sec: int | None = None) -> None:
 
 
 def publish(container_id: str) -> str:
-    """コンテナを公開して Instagram メディア ID を返す。"""
+    """コンテナを公開して Instagram メディア ID を返す。一過性エラーは自動リトライ。"""
     endpoint = _url(f"{config.IG_USER_ID}/media_publish")
     data = {
         "creation_id": container_id,
         "access_token": config.META_ACCESS_TOKEN,
     }
-    r = requests.post(endpoint, data=data, timeout=60)
+    r = _post_with_retry(endpoint, data)
     if not r.ok:
         raise RuntimeError(f"publish failed: {r.status_code} {r.text}")
     body = r.json()
