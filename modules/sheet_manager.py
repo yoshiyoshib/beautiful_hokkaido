@@ -109,10 +109,21 @@ def set_public_media(row: int, public_url: str) -> None:
     update_cell(row, "Public_Media_URL", public_url)
 
 
+def _col_letter(col_1based: int) -> str:
+    """1-based 列番号を A1 記法の列文字に変換（A〜Z のみ、本プロジェクトは9列固定）。"""
+    return chr(ord("A") + col_1based - 1)
+
+
 def mark_posted(row: int, ig_post_id: str) -> None:
+    """IG_Post_ID は RAW 書き込みで科学記法変換を回避（17桁数値が 1.81e+16 になる問題）。"""
     ws = _worksheet()
     ws.update_cell(row, _col_index("Status"), "Posted")
-    ws.update_cell(row, _col_index("IG_Post_ID"), ig_post_id)
+    col = _col_letter(_col_index("IG_Post_ID"))
+    ws.update(
+        range_name=f"{col}{row}",
+        values=[[str(ig_post_id)]],
+        value_input_option="RAW",
+    )
 
 
 def fetch_existing_ids() -> set[str]:

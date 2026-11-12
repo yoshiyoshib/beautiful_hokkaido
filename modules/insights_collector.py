@@ -127,11 +127,16 @@ def collect() -> int:
             insights.get("total_interactions", 0),
             now_iso,
         ]
+        # RAW で書き込む: IG_Post_ID (17桁数値) が科学記法に変換される問題を回避
         if pid in existing_ids:
-            ws.update(f"A{existing_ids[pid]}", [row])
+            ws.update(
+                range_name=f"A{existing_ids[pid]}",
+                values=[row],
+                value_input_option="RAW",
+            )
             updated += 1
         else:
-            ws.append_row(row, value_input_option="USER_ENTERED")
+            ws.append_row(row, value_input_option="RAW")
             appended += 1
 
     print(f"[insights] appended={appended} updated={updated}")
